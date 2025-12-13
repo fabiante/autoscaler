@@ -18,7 +18,9 @@ package budgets
 
 import (
 	"reflect"
+	"sort"
 	"strconv"
+	"strings"
 
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
@@ -227,7 +229,42 @@ func (bp *ScaleDownBudgetProcessor) group(nodes []*apiv1.Node) []*NodeGroupView 
 			})
 		}
 	}
+
+	// For each node group, sort nodes so that nodes with higher numeric
+	// suffixes are earlier in the list. This makes cropping remove higher
+	// index nodes first (e.g., node-2 before node-1), preserving node-0.
+	for _, view := range grouped {
+		sort.Slice(view.Nodes, func(i, j int) bool {
+			ni, okI := trailingNumber(view.Nodes[i].Name)
+			nj, okJ := trailingNumber(view.Nodes[j].Name)
+			if okI && okJ {
+				return ni > nj
+			}
+			if okI {
+				return true
+			}
+			if okJ {
+				return false
+			}
+			// fallback to descending name order to keep a deterministic ordering
+			return strings.Compare(view.Nodes[i].Name, view.Nodes[j].Name) > 0
+		})
+	}
 	return grouped
+}
+
+// trailingNumber returns the integer trailing suffix after the last '-' in the
+// node name, and whether it was parsed successfully.
+func trailingNumber(name string) (int, bool) {
+	idx := strings.LastIndex(name, "-")
+	if idx == -1 || idx == len(name)-1 {
+		return 0, false
+	}
+	n, err := strconv.Atoi(name[idx+1:])
+	if err != nil {
+		return 0, false
+	}
+	return n, true
 }
 
 func (bp *ScaleDownBudgetProcessor) categorize(groups []*NodeGroupView) (individual, atomic []*NodeGroupView) {

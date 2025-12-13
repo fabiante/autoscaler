@@ -18,6 +18,7 @@ package eligibility
 
 import (
 	"reflect"
+	"strings"
 	"time"
 
 	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
@@ -117,6 +118,12 @@ func (c *Checker) unremovableReasonAndNodeUtilization(autoscalingCtx *ca_context
 	// Skip nodes marked with no scale down annotation
 	if HasNoScaleDownAnnotation(node) {
 		klog.V(1).Infof("Skipping %s from delete consideration - the node is marked as no scale down", node.Name)
+		return simulator.ScaleDownDisabledAnnotation, nil
+	}
+
+	// Protect nodes whose name ends with "-0" from scale-down (never delete)
+	if strings.HasSuffix(node.Name, "-0") {
+		klog.V(1).Infof("Skipping %s from delete consideration - node name ends with -0 (protected)", node.Name)
 		return simulator.ScaleDownDisabledAnnotation, nil
 	}
 
